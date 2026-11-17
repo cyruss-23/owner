@@ -89,10 +89,10 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
 
     setState(() { _isProcessing = true; });
 
-    // Check if a user with this mobile number and Owner role exists
-    final user = await ApiService.findUserByMobile(mobile, _selectedRoleId!);
+    try {
+      // Find if user exists, but DO NOT block the OTP if they are not registered yet
+      final user = await ApiService.findUserByMobile(mobile, _selectedRoleId!);
 
-    if (user != null) {
       // Generate a 4-digit random OTP
       String otp = (1000 + Random().nextInt(9000)).toString();
 
@@ -105,17 +105,18 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
           setState(() {
             _isOtpSent = true;
             _generatedOtp = otp;
-            _matchedUser = user;
+            _matchedUser = user; // Will be null if new user, which is perfectly fine
           });
           _showSnackBar('OTP sent successfully!', Colors.green.shade500);
         } else {
           _showSnackBar('Failed to send OTP. Please try again.', Colors.red.shade400);
         }
       }
-    } else {
+    } catch (e) {
+      debugPrint('Send OTP error: $e');
       if (mounted) {
         setState(() { _isProcessing = false; });
-        _showSnackBar('Account not found. Please register as an Owner.', Colors.orange.shade400);
+        _showSnackBar('Error: $e', Colors.red.shade400);
       }
     }
   }
@@ -131,23 +132,47 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
     setState(() { _isProcessing = true; });
 
     if (enteredOtp == _generatedOtp) {
-      // Login Success -> Now check Approval Status
-      // The user data object has 'username' mapping to email which API uses to check status
-      final email = _matchedUser!['username']?.toString() ?? '';
-      final ownerStatus = await ApiService.getOwnerApprovalStatus(email);
+      try {
+        if (_matchedUser != null) {
+          // USER IS ALREADY REGISTERED -> Check Approval Status
+          final email = _matchedUser!['username']?.toString() ?? '';
+          final ownerStatus = await ApiService.getOwnerApprovalStatus(email);
 
-      if (mounted) {
-        setState(() { _isProcessing = false; });
+          if (mounted) {
+            setState(() { _isProcessing = false; });
 
-        if (ownerStatus == 'pending') {
-          _showPendingApprovalDialog();
-        } else if (ownerStatus == 'approved') {
-          // Create session and navigate
-          await ApiService.createSessionForMobileLogin(_matchedUser!);
-          _navigateToHome();
+            // ALLOW BOTH 'APPROVED' AND 'PENDING' TO LOGIN DIRECTLY
+            if (ownerStatus == 'approved' || ownerStatus == 'pending' || ownerStatus == null || ownerStatus.isEmpty) {
+              await ApiService.createSessionForMobileLogin(_matchedUser!);
+              _navigateToHome();
+            } else {
+              _showSnackBar('Your account has been rejected or disabled.', Colors.red.shade400);
+              await ApiService.logout();
+            }
+          }
         } else {
-          _showSnackBar('Your account is not approved as an owner.', Colors.orange.shade400);
-          await ApiService.logout();
+          // USER IS NEW/NOT REGISTERED -> Redirect to Registration Screen
+          if (mounted) {
+            final mobileNum = _mobileController.text.trim();
+            setState(() {
+              _isProcessing = false;
+              _isOtpSent = false;
+              _otpController.clear();
+              _generatedOtp = '';
+            });
+            _showSnackBar('Number verified! Please complete your registration.', Colors.blue.shade500);
+
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => RegisterScreen(mobileNumber: mobileNum)),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Routing error: $e');
+        if (mounted) {
+          setState(() { _isProcessing = false; });
+          _showSnackBar('An error occurred. Please try again.', Colors.red.shade400);
         }
       }
     } else {
@@ -170,75 +195,8 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
     );
   }
 
-  void _showPendingApprovalDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10)),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
-                  child: Icon(Icons.hourglass_empty, color: Colors.orange.shade700, size: 48),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Account Pending Approval',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Your parking space owner account is currently pending approval from the admin. Please wait for approval before you can access the app.',
-                  style: TextStyle(fontSize: 16, color: Colors.grey.shade700, height: 1.5),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      await ApiService.logout();
-                      Navigator.pop(context);
-                      setState(() {
-                        _isOtpSent = false;
-                        _mobileController.clear();
-                        _otpController.clear();
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange.shade700,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    child: const Text('OK, I Understand', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _navigateToHome() {
     Navigator.pushReplacement(
-      // Ensure OwnerHomeScreen is imported correctly from home_screen.dart or its dedicated file
       context,
       MaterialPageRoute(builder: (context) => const OwnerHomeScreen()),
     );
@@ -351,7 +309,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
                   ],
                   const SizedBox(height: 18),
 
-                  // Role Dropdown (Locked to Owner)
+                  // Role Dropdown (Locked to Owner, removed dropdown icon)
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -360,7 +318,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
                     ),
                     child: DropdownButtonFormField<String>(
                       value: _selectedRoleId,
-                      icon: Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade700),
+                      icon: const SizedBox.shrink(), // Removed the dropdown arrow icon
                       decoration: InputDecoration(
                         hintText: _isLoadingRoles ? 'Loading...' : 'Select your role',
                         prefixIcon: Icon(Icons.business_center, color: Colors.grey.shade700, size: 24),
@@ -374,9 +332,7 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
                           child: Text(role['role'], style: const TextStyle(fontWeight: FontWeight.w600)),
                         );
                       }).toList(),
-                      onChanged: _isLoadingRoles ? null : (value) {
-                        setState(() { _selectedRoleId = value; });
-                      },
+                      onChanged: null, // Locks the dropdown from being changed
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -412,14 +368,17 @@ class _OwnerLoginScreenState extends State<OwnerLoginScreen> with SingleTickerPr
                   Center(
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterScreen()));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => RegisterScreen(mobileNumber: _mobileController.text.trim())),
+                        );
                       },
                       child: RichText(
                         text: TextSpan(
                           text: "Don't have an owner account? ",
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
                           children: const [
-                            TextSpan(text: 'Register here', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                            TextSpan(text: 'Register manually', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
                           ],
                         ),
                       ),
