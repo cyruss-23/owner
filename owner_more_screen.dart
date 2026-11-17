@@ -18,6 +18,8 @@ import 'more/owner_settlement_screen.dart';
 import 'more/owner_shift_screen.dart';
 import 'more/owner_staff_screen.dart';
 import 'more/owner_staff_screen.dart';
+import 'owner/owner_availability_screen.dart';
+import 'owner/owner_slot_map_screen.dart';
 import 'owner_analytics_screen.dart';
 import 'owner_overstay_screen.dart';
 import 'owner_qr_screen.dart';
@@ -479,6 +481,7 @@ class _OwnerMoreScreenState extends State<OwnerMoreScreen> {
                       MaterialPageRoute(builder: (_) => const KycScreen()),
                     ).then((_) => _loadData()),
                   ),
+
                   _buildMenuTile(
                     icon: Icons.people_alt, color: Colors.purple,
                     title: 'Staff Management',
@@ -486,6 +489,24 @@ class _OwnerMoreScreenState extends State<OwnerMoreScreen> {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const OwnerStaffScreen()),
+                    ).then((_) => _loadData()),
+                  ),
+                  _buildMenuTile(
+                    icon: Icons.event_available_rounded, color: Colors.purple,
+                    title: 'Availability',
+                    subtitle: 'Open Full CLosed',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const OwnerAvailabilityScreen()),
+                    ).then((_) => _loadData()),
+                  ),
+                  _buildMenuTile(
+                    icon: Icons.scatter_plot_sharp, color: Colors.purple,
+                    title: 'Slot Map',
+                    subtitle: 'Visual Slot ',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const OwnerSlotMapScreen()),
                     ).then((_) => _loadData()),
                   ),
                   _buildMenuTile(
